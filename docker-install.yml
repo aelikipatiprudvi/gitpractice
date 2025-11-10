@@ -1,6 +1,6 @@
 ---
 - name: Install and Configure Docker
-  hosts: all
+  hosts: All
   become: yes
 
   tasks:

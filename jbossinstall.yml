@@ -1,0 +1,83 @@
+---
+- name: Install and Configure JBoss (WildFly)
+  hosts: web
+  become: yes
+
+  vars:
+    wildfly_version: 28.0.0.Final
+    install_dir: /opt/wildfly
+    wildfly_user: wildfly
+    wildfly_group: wildfly
+    java_package: openjdk-11-jdk
+
+  tasks:
+    - name: Install Java and required tools
+      apt:
+        name:
+          - "{{ java_package }}"
+          - wget
+          - unzip
+        state: present
+        update_cache: yes
+
+    
+    - name: Download WildFly
+      get_url:
+        url: "https://github.com/wildfly/wildfly/releases/download/{{ wildfly_version }}/wildfly-{{ wildfly_version }}.tar.gz"
+        dest: "/tmp/wildfly-{{ wildfly_version }}.tar.gz"
+        mode: '0644'
+
+    - name: Extract WildFly
+      unarchive:
+        src: "/tmp/wildfly-{{ wildfly_version }}.tar.gz"
+        dest: /opt/
+        remote_src: yes
+      notify: Restart WildFly
+
+    - name: Rename extracted folder to wildfly
+      command: mv /opt/wildfly-{{ wildfly_version }} {{ install_dir }}
+      args:
+        creates: "{{ install_dir }}"
+
+    - name: Set permissions
+      file:
+        path: "{{ install_dir }}"
+        state: directory
+        recurse: yes
+        owner: "{{ wildfly_user }}"
+        group: "{{ wildfly_group }}"
+
+    - name: Create systemd service for WildFly
+      copy:
+        dest: /etc/systemd/system/wildfly.service
+        content: |
+          [Unit]
+          Description=WildFly Application Server
+          After=network.target
+
+          [Service]
+          Type=simple
+          User={{ wildfly_user }}
+          Group={{ wildfly_group }}
+          ExecStart={{ install_dir }}/bin/standalone.sh -b=0.0.0.0
+          ExecStop=/bin/kill -TERM $MAINPID
+          Restart=on-failure
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable and start WildFly service
+      systemd:
+        name: wildfly
+        state: started
+        enabled: yes
+
+  handlers:
+    - name: Restart WildFly
+      systemd:
+        name: wildfly
+        state: restarted
